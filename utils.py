@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Tuple, Union
 
 import cv2
+import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 
@@ -52,3 +54,103 @@ class LandCoverDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
+
+
+####
+# transformations
+####
+
+
+class ToTensor:
+    """Transform to tensor."""
+
+    def __call__(self, sample: Dict) -> Dict:
+        assert (
+            "image" in sample.keys() and "label" in sample.keys()
+        ), "Wrong sample format!"
+
+        image, label = sample["image"], sample["label"]
+
+        # add channel to grayscale image
+        label = label.reshape((label.shape[0], label.shape[1], 1))
+
+        # move channel to first dimmention
+        image = image.transpose((2, 0, 1))
+        label = label.transpose((2, 0, 1))
+
+        return {"image": torch.from_numpy(image), "label": torch.from_numpy(label)}
+
+
+class Resize:
+    """Resize input image to desired output size.
+
+    Args:
+        output_size (int or tuple): Desired output size. If int then smaller of image edges takes this size keeping image aspect ratio.
+    """
+
+    def __init__(self, output_size: Union[int, Tuple]) -> None:
+        self.output_size = output_size
+
+        assert isinstance(self.output_size, (int, tuple)), "Wrong output size format!"
+
+    def __call__(self, sample: Dict) -> Dict:
+        assert (
+            "image" in sample.keys() and "label" in sample.keys()
+        ), "Wrong sample format!"
+        assert (
+            sample["image"].shape[:2] == sample["label"].shape[:2]
+        ), "Different size of image and label!"
+
+        image, label = sample["image"], sample["label"]
+        h, w = image.shape[:2]
+
+        if isinstance(self.output_size, int):
+            if h > w:
+                new_h, new_w = self.output_size * h / w, self.output_size
+            elif h < w:
+                new_h, new_w = self.output_size, self.output_size * w / h
+            else:
+                new_h, new_w = self.output_size, self.output_size
+        elif isinstance(self.output_size, tuple):
+            new_h, new_w = self.output_size
+
+        new_h, new_w = int(new_h), int(new_w)
+        image = cv2.resize(image, (new_h, new_w))
+        label = cv2.resize(label, (new_h, new_w))
+
+        return {"image": image, "label": label}
+
+
+class Normalize:
+    """Normalize images.
+
+    Args:
+        mean (list): List of means for every channel.
+        std (list): List of standard deviations for every channel.
+    """
+
+    def __init__(self, mean: List[float], std: List[float]) -> None:
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, sample: Dict) -> Dict:
+        image, label = sample["image"], sample["label"]
+
+        assert (
+            len(self.mean) == image.shape[2] and len(self.std) == image.shape[2]
+        ), "Wrong mean or std size!"
+
+        params = {"mean": {}, "std": {}}
+        for i, (mean, std) in enumerate(zip(self.mean, self.std)):
+            params["mean"][i] = np.ones((image.shape[0], image.shape[1], 1)) * mean
+            params["std"][i] = np.ones((image.shape[0], image.shape[1], 1)) * std
+
+        means = np.concatenate(
+            (params["mean"][0], params["mean"][1], params["mean"][2]), axis=2
+        )
+        stds = np.concatenate(
+            (params["std"][0], params["std"][1], params["std"][2]), axis=2
+        )
+        image = (image - means) / stds
+
+        return {"image": image, "label": label}
