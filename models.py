@@ -1,3 +1,4 @@
+from os import stat
 import torch
 import torch.nn as nn
 
@@ -7,27 +8,35 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         self.encoder = nn.Sequential(
-            self.contraction(in_channels, features),
+            nn.Sequential(*self.contraction(in_channels, features).children())[1:],
             self.contraction(features, features * 2),
             self.contraction(features * 2, features * 4),
             self.contraction(features * 4, features * 8),
         )
+
+        self.bottleneck = nn.Sequential(
+            self.contraction(features * 8, features * 16),
+            nn.ConvTranspose2d(
+                in_channels=features * 16,
+                out_channels=features * 8,
+                kernel_size=2,
+                stride=2,
+                padding=0,
+            ),
+        )
+
         self.decoder = nn.Sequential(
-            self.expansion(features * 8, features * 16, features * 8),
             self.expansion(features * 16, features * 8, features * 4),
             self.expansion(features * 8, features * 4, features * 2),
             self.expansion(features * 4, features * 2, features),
-        )
-        self.final = nn.Sequential(
-            nn.Conv2d(features * 2, features, kernel_size=3, padding=0,),
-            nn.BatchNorm2d(num_features=features),
-            nn.ReLU(),
-            nn.Conv2d(features, features, kernel_size=3, padding=0,),
-            nn.BatchNorm2d(num_features=features),
-            nn.ReLU(),
-            nn.Conv2d(features, num_classes, kernel_size=1, padding=0,),
-            nn.BatchNorm2d(num_features=num_classes),
-            nn.LogSoftmax(dim=2),
+            nn.Sequential(
+                nn.Sequential(
+                    *self.expansion(features * 2, features, num_classes).children()
+                )[:-1],
+                nn.Conv2d(features, num_classes, kernel_size=1, padding=0,),
+                nn.BatchNorm2d(num_features=num_classes),
+                nn.LogSoftmax(dim=2),
+            ),
         )
 
     def forward(self, x):
@@ -36,23 +45,24 @@ class Unet(nn.Module):
         enc2 = self.encoder[2](enc1)
         enc3 = self.encoder[3](enc2)
 
-        dec0 = self.decoder[0](enc3)
-        dec1 = self.decoder[1](torch.cat((enc3, dec0), dim=1))
-        dec2 = self.decoder[2](torch.cat((enc2, dec1), dim=1))
-        dec3 = self.decoder[3](torch.cat((enc1, dec2), dim=1))
+        bottleneck = self.bottleneck(enc3)
 
-        final = self.final(torch.cat((enc0, dec3), dim=1))
+        dec0 = self.decoder[0](torch.cat((enc3, bottleneck), dim=1))
+        dec1 = self.decoder[1](torch.cat((enc2, dec0), dim=1))
+        dec2 = self.decoder[2](torch.cat((enc1, dec1), dim=1))
+        dec3 = self.decoder[3](torch.cat((enc0, dec2), dim=1))
 
-        return final
+        return dec3
 
     @staticmethod
     def contraction(in_channels, num_features):
         seq = nn.Sequential(
+            nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=num_features,
                 kernel_size=3,
-                padding=0,
+                padding=1,
             ),
             nn.BatchNorm2d(num_features=num_features),
             nn.ReLU(),
@@ -60,11 +70,10 @@ class Unet(nn.Module):
                 in_channels=num_features,
                 out_channels=num_features,
                 kernel_size=3,
-                padding=0,
+                padding=1,
             ),
             nn.BatchNorm2d(num_features=num_features),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
         )
 
         return seq
@@ -76,7 +85,7 @@ class Unet(nn.Module):
                 in_channels=in_channels,
                 out_channels=num_features,
                 kernel_size=3,
-                padding=0,
+                padding=1,
             ),
             nn.BatchNorm2d(num_features=num_features),
             nn.ReLU(),
@@ -84,7 +93,7 @@ class Unet(nn.Module):
                 in_channels=num_features,
                 out_channels=num_features,
                 kernel_size=3,
-                padding=0,
+                padding=1,
             ),
             nn.BatchNorm2d(num_features=num_features),
             nn.ReLU(),
