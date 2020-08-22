@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 
 
-class Unet(nn.Module):
+class UNet(nn.Module):
     def __init__(self, in_channels, features, num_classes):
-        super(Unet, self).__init__()
+        super(UNet, self).__init__()
 
         self.encoder = nn.Sequential(
             nn.Sequential(*self.contraction(in_channels, features).children())[1:],
