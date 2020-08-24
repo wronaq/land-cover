@@ -1,6 +1,10 @@
 data/
 qgis/
 .vscode
+runs/
+w_sizes
+h_sizes
+script.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
