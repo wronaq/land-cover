@@ -1,10 +1,11 @@
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
+from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import ColorJitter
 
@@ -73,12 +74,8 @@ class ToTensor:
 
         image, label = sample["image"], sample["label"]
 
-        # add channel to grayscale image
-        label = label.reshape((label.shape[0], label.shape[1], 1))
-
-        # move channel to first dimmention
+        # move channel to first dimension
         image = image.transpose((2, 0, 1))
-        label = label.transpose((2, 0, 1))
 
         return {"image": torch.from_numpy(image), "label": torch.from_numpy(label)}
 
@@ -177,7 +174,9 @@ class BrightnessJitter(ColorJitter):
                 .uniform_(self.brightness[0], self.brightness[1])
                 .item()
             )
+            image = Image.fromarray(image, mode="RGB")
             image = F.adjust_brightness(image, brightness_factor)
+            image = np.asarray(image)
 
         return {"image": image, "label": label}
 
@@ -198,7 +197,9 @@ class ContrastJitter(ColorJitter):
             contrast_factor = (
                 torch.tensor(1.0).uniform_(self.contrast[0], self.contrast[1]).item()
             )
+            image = Image.fromarray(image, mode="RGB")
             image = F.adjust_contrast(image, contrast_factor)
+            image = np.asarray(image)
 
         return {"image": image, "label": label}
 
@@ -221,7 +222,9 @@ class SaturationJitter(ColorJitter):
                 .uniform_(self.saturation[0], self.saturation[1])
                 .item()
             )
+            image = Image.fromarray(image, mode="RGB")
             image = F.adjust_saturation(image, saturation_factor)
+            image = np.asarray(image)
 
         return {"image": image, "label": label}
 
@@ -240,6 +243,100 @@ class HueJitter(ColorJitter):
 
         if self.hue:
             hue_factor = torch.tensor(1.0).uniform_(self.hue[0], self.hue[1]).item()
+            image = Image.fromarray(image, mode="RGB")
             image = F.adjust_hue(image, hue_factor)
+            image = np.asarray(image)
 
         return {"image": image, "label": label}
+
+
+class EarlyStopping:
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+
+    def __init__(
+        self, patience=7, verbose=False, delta=0, path="early_stopping_checkpoint.pt"
+    ):
+        """
+        Args:
+            patience (int): How long to wait after last time validation loss improved.
+                            Default: 7
+            verbose (bool): If True, prints a message for each validation loss improvement.
+                            Default: False
+            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                            Default: 0
+            path (str): Path for the checkpoint to be saved to.
+                            Default: 'checkpoint.pt'
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+
+    def __call__(self, val_loss, model):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            print(f"EarlyStopping counter: {self.counter} out of {self.patience}")
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model):
+        """Saves model when validation loss decrease."""
+        if self.verbose:
+            print(
+                f"Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ..."
+            )
+        torch.save(model.state_dict(), self.path)
+        self.val_loss_min = val_loss
+
+
+def validation(
+    dataloader: Any,
+    model: Any,
+    criterion: Any,
+    batch_size: int,
+    resized: Tuple[int, int],
+) -> tuple():
+    """Calculate loss and accuracy on validation/test dataset.
+
+    Args:
+        dataloader (Any): Validation or test PyTorch dataloader.
+        model (Any): PyTorch model.
+        criterion (Any): PyTorch negative log-likelihood loss.
+        batch_size (int): Batch size.
+        resized (Tuple[int, int]): Resized image size.
+
+    Returns:
+        tuple: Model loss and accuracy on validation/test dataset.
+    """
+    model.eval()
+    valid_loss = 0.0
+    valid_acc = 0.0
+    denom = int(np.ceil(len(dataloader) / batch_size))
+    for batch in dataloader:
+        images = batch["image"]
+        labels = batch["label"]
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        # results
+        valid_loss += loss.item()
+        _, predicted = torch.max(outputs, dim=3)
+        valid_acc += (labels == predicted).sum().item() / (
+            batch_size * resized[0] * resized[1]
+        )
+
+        return valid_loss / denom, valid_acc / denom
