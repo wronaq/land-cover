@@ -35,7 +35,7 @@ class UNet(nn.Module):
                 )[:-1],
                 nn.Conv2d(features, num_classes, kernel_size=1, padding=0,),
                 nn.BatchNorm2d(num_features=num_classes),
-                nn.LogSoftmax(dim=2),
+                nn.LogSoftmax(dim=1),
             ),
         )
 
