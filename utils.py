@@ -307,6 +307,7 @@ def validation(
     dataloader: Any,
     model: Any,
     criterion: Any,
+    device: str,
     batch_size: int,
     resized: Tuple[int, int],
 ) -> tuple():
@@ -316,6 +317,7 @@ def validation(
         dataloader (Any): Validation or test PyTorch dataloader.
         model (Any): PyTorch model.
         criterion (Any): PyTorch negative log-likelihood loss.
+        device (str): Pytorch device type.
         batch_size (int): Batch size.
         resized (Tuple[int, int]): Resized image size.
 
@@ -327,16 +329,16 @@ def validation(
     valid_acc = 0.0
     denom = int(np.ceil(len(dataloader) / batch_size))
     for batch in dataloader:
-        images = batch["image"]
-        labels = batch["label"]
+        images = batch["image"].float().to(device)
+        labels = batch["label"].long().to(device)
         outputs = model(images)
         loss = criterion(outputs, labels)
 
         # results
         valid_loss += loss.item()
-        _, predicted = torch.max(outputs, dim=3)
+        _, predicted = torch.max(outputs, dim=1)
         valid_acc += (labels == predicted).sum().item() / (
             batch_size * resized[0] * resized[1]
         )
 
-        return valid_loss / denom, valid_acc / denom
+    return valid_loss / denom, valid_acc / denom
