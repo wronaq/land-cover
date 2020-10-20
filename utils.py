@@ -327,7 +327,6 @@ def validation(
     model.eval()
     valid_loss = 0.0
     valid_acc = 0.0
-    denom = int(np.ceil(len(dataloader) / batch_size))
     for batch in dataloader:
         images = batch["image"].float().to(device)
         labels = batch["label"].long().to(device)
@@ -341,4 +340,4 @@ def validation(
             batch_size * resized[0] * resized[1]
         )
 
-    return valid_loss / denom, valid_acc / denom
+    return valid_loss / len(dataloader), valid_acc / len(dataloader)
