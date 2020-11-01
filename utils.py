@@ -2,9 +2,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
 import cv2
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
+from matplotlib import colors
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import ColorJitter
@@ -341,3 +344,46 @@ def validation(
         )
 
     return valid_loss / len(dataloader), valid_acc / len(dataloader)
+
+
+def compare_true_pred(
+    true: torch.Tensor,
+    predicted: torch.Tensor,
+    figsize: Tuple = (10, 5),
+    cmap: str = "jet",
+) -> None:
+    """Plot true label and predicted from NN for land cover sematic segmentation.
+       Random example from batch will be processed.
+
+    Args:
+        true (torch.Tensor): Batch of true labels [batch size, X, Y].
+        predicted (torch.Tensor): Corresponding batch of predicted outputs [batch_size, number of classes, X, Y].
+        figsize (Tuple, optional): Figure size. Defaults to (10, 5).
+        cmap (str, optional): Colormap. Defaults to "jet".
+
+    Returns:
+        None. Use matplotlib.pyplot.show() to visualize.
+    """
+
+    # select random image from batch
+    rnd = np.random.randint(true.size()[0])
+    true = true[rnd, ::]
+    num_classes = predicted.size()[1]
+    _, predicted = predicted[rnd, ::].max(dim=0)
+
+    # set colormap
+    custom_cmap = cm.get_cmap(cmap, num_classes)
+    norm = colors.Normalize(vmin=0, vmax=num_classes - 1)
+
+    # prepare matplotlib object
+    fig, axs = plt.subplots(1, 2, constrained_layout=True, figsize=figsize)
+    for ax, pic in zip(axs.flat, [true, predicted]):
+        ax.imshow(pic, cmap=custom_cmap).set_norm(norm)
+    fig.colorbar(
+        plt.cm.ScalarMappable(cmap=custom_cmap),
+        boundaries=np.linspace(0, num_classes - 1, num_classes),
+        ax=axs.flat,
+        orientation="horizontal",
+    )
+
+    return None
